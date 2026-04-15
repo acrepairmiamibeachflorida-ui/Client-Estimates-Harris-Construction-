@@ -54,9 +54,9 @@ function isMobileWidth() {
 export default function HarrisContractingLiveDemo() {
   const [step, setStep] = useState<Step>("home");
   const [estimateSubstep, setEstimateSubstep] = useState<EstimateSubstep>(0);
-  const [project, setProject] = useState<ProjectName>("Kitchen Remodel");
-  const [size, setSize] = useState<SizeName>("Medium");
-  const [finish, setFinish] = useState<FinishName>("High-End");
+  const [project, setProject] = useState<ProjectName | null>(null);
+  const [size, setSize] = useState<SizeName | null>(null);
+  const [finish, setFinish] = useState<FinishName | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -66,7 +66,23 @@ export default function HarrisContractingLiveDemo() {
   const [isCalculating, setIsCalculating] = useState(false);
 
   const estimate = useMemo(() => {
-    const [min, max] = pricing[project][size][finish];
+    if (!project) return null;
+
+    if (project && !size) {
+      const ranges = Object.values(pricing[project]).flatMap((finishMap) => Object.values(finishMap));
+      const mins = ranges.map(([min]) => min);
+      const maxes = ranges.map(([, max]) => max);
+      return { min: Math.min(...mins), max: Math.max(...maxes) };
+    }
+
+    if (project && size && !finish) {
+      const ranges = Object.values(pricing[project][size]);
+      const mins = ranges.map(([min]) => min);
+      const maxes = ranges.map(([, max]) => max);
+      return { min: Math.min(...mins), max: Math.max(...maxes) };
+    }
+
+    const [min, max] = pricing[project][size!][finish!];
     return { min, max };
   }, [project, size, finish]);
 
@@ -105,13 +121,35 @@ export default function HarrisContractingLiveDemo() {
 
   const progressWidth = step === "home" ? "0%" : step === "estimate" ? "33%" : step === "results" ? "66%" : "100%";
 
+  function hasSelectionForCurrentEstimateStep() {
+    if (estimateSubstep === 0) return !!project;
+    if (estimateSubstep === 1) return !!size;
+    return !!finish;
+  }
+
+  function promptForMissingSelection() {
+    window.alert("Quick step — choose an option so we can refine your estimate.");
+  }
+
+  function getEstimateDisplay(context: "home" | "estimate") {
+    if (estimate) return `${formatCurrency(estimate.min)} – ${formatCurrency(estimate.max)}`;
+    return context === "home" ? "Waiting for Selection" : "Choose Project Type";
+  }
+
+  function getEstimateHelperText() {
+    if (!project) return "Choose the project type to begin calculating your planning range.";
+    if (project && !size) return `Range shown for ${project}. Choose project size to narrow it down.`;
+    if (project && size && !finish) return `Range shown for ${project}, ${size.toLowerCase()} scope. Choose finish level to refine it further.`;
+    return `Based on ${project}, ${size!.toLowerCase()} scope, and ${finish!.toLowerCase()} finishes.`;
+  }
+
   const styles = {
     page: {
       minHeight: "100vh",
       background: `radial-gradient(circle at top, rgba(201,169,110,0.16), transparent 28%), ${colors.bg}`,
       color: colors.text,
       fontFamily: "Inter, system-ui, sans-serif",
-      padding: isMobile ? "16px 14px 110px" : "28px 20px 40px",
+      padding: isMobile ? "16px 14px 190px" : "28px 20px 40px",
       opacity: visible ? 1 : 0,
       transition: "opacity 0.45s ease",
     } as React.CSSProperties,
@@ -373,7 +411,7 @@ export default function HarrisContractingLiveDemo() {
           </p>
 
           <div style={{ display: "flex", gap: 12, flexDirection: isMobile ? "column" : "row", marginTop: 22 }}>
-            <button style={styles.primaryButton} onClick={() => { setEstimateSubstep(0); setStep("estimate"); }} {...buttonHoverProps()}>Start Your Estimate</button>
+            <button style={styles.primaryButton} onClick={() => { setProject(null); setSize(null); setFinish(null); setEstimateSubstep(0); setStep("estimate"); }} {...buttonHoverProps()}>Start Your Estimate</button>
             <button style={styles.secondaryButton} onClick={() => setStep("results")} {...buttonHoverProps()}>Preview Results Experience</button>
           </div>
 
@@ -401,9 +439,9 @@ export default function HarrisContractingLiveDemo() {
                 transition: "transform 0.24s ease, opacity 0.24s ease"
               }}
             >
-              {formatCurrency(estimate.min)} – {formatCurrency(estimate.max)}
+              {getEstimateDisplay("home")}
             </div>
-            <div style={{ fontSize: 14, color: colors.muted, marginTop: 8 }}>Based on current demo selections</div>
+            <div style={{ fontSize: 14, color: colors.muted, marginTop: 8 }}>Select project details to preview a planning range</div>
           </div>
 
           <div style={{ ...styles.projectGrid, marginTop: 16 }}>
@@ -461,7 +499,7 @@ export default function HarrisContractingLiveDemo() {
     ];
 
     return (
-      <div style={{ maxWidth: 980, margin: "0 auto" }}>
+      <div style={{ maxWidth: 980, margin: "0 auto", paddingBottom: isMobile ? 24 : 0 }}>
         <div style={styles.stepBar}>
           <span>Step 1 of 3</span>
           <span>Build the estimate one decision at a time.</span>
@@ -494,10 +532,10 @@ export default function HarrisContractingLiveDemo() {
                   transition: "transform 0.24s ease, opacity 0.24s ease"
                 }}
               >
-                {formatCurrency(estimate.min)} – {formatCurrency(estimate.max)}
+                {getEstimateDisplay("estimate")}
               </div>
               <div style={{ fontSize: 14, color: colors.muted, marginTop: 8, lineHeight: 1.6 }}>
-                Based on {project}, {size.toLowerCase()} scope, and {finish.toLowerCase()} finishes.
+                {getEstimateHelperText()}
               </div>
             </div>
           )}
@@ -507,7 +545,9 @@ export default function HarrisContractingLiveDemo() {
               <button
                 style={styles.primaryButton}
                 onClick={() => {
-                  if (estimateSubstep < 2) {
+                  if (!hasSelectionForCurrentEstimateStep()) {
+                    promptForMissingSelection();
+                  } else if (estimateSubstep < 2) {
                     setEstimateSubstep((estimateSubstep + 1) as EstimateSubstep);
                   } else {
                     setIsCalculating(true);
@@ -580,7 +620,7 @@ export default function HarrisContractingLiveDemo() {
               transition: "transform 0.24s ease, opacity 0.24s ease",
             }}
           >
-            {formatCurrency(estimate.min)} – {formatCurrency(estimate.max)}
+            {getEstimateDisplay("estimate")}
           </div>
           <div style={{ fontSize: 14, color: colors.muted, marginTop: 10, lineHeight: 1.6 }}>
             This is a general planning range based on the selections made in the estimate builder. The purpose here is to move from curiosity to commitment.
@@ -601,7 +641,7 @@ export default function HarrisContractingLiveDemo() {
         <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
           <div style={{ ...styles.goldCard, textAlign: "center", padding: isMobile ? 16 : 18 }}>
             <div style={{ fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", color: "#E4E4E7" }}>
-              Next Best Move
+              Next Step: Project Review
             </div>
             <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, marginTop: 8 }}>
               Schedule the review while the project scope is fresh.
@@ -617,24 +657,50 @@ export default function HarrisContractingLiveDemo() {
             style={{ ...styles.card, padding: isMobile ? 18 : 22, background: "rgba(0,0,0,0.28)" }}
             {...cardHoverProps()}
           >
-            <div style={styles.sectionLabel}>Owner Video Placeholder</div>
+            <div style={{ ...styles.sectionLabel, marginBottom: 14 }}>Personal Project Review Based on Your Selections</div>
             <div
               style={{
-                minHeight: 220,
                 borderRadius: 22,
+                overflow: "hidden",
                 border: `1px solid ${colors.border}`,
-                background: "linear-gradient(135deg, #1B1B1B, #111111)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                padding: 22,
-                color: "#E4E4E7",
-                lineHeight: 1.8,
-                fontSize: isMobile ? 14 : 16,
+                background: "#000",
+                aspectRatio: "1 / 1",
+                position: "relative"
               }}
             >
-              “Based on what you selected, your project falls within this planning range. The next step is a project review where scope, materials, and site conditions are confirmed before final pricing.”
+              <video
+                autoPlay
+                muted
+                loop
+                playsInline
+                style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", background: "#000", cursor: "pointer" }}
+                onClick={(e) => {
+                  const video = e.currentTarget;
+                  video.loop = false;
+                  video.muted = false;
+                  video.currentTime = 0;
+                  video.play();
+                }}
+              >
+                <source src="/Harris%20Thank%20You%20Video%New.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+              <div
+                style={{
+                  position: "absolute",
+                  right: 12,
+                  bottom: 12,
+                  background: "rgba(0,0,0,0.55)",
+                  color: "#FFFFFF",
+                  fontSize: 12,
+                  padding: "8px 10px",
+                  borderRadius: 999,
+                  letterSpacing: "0.02em",
+                  pointerEvents: "none"
+                }}
+              >
+                Tap for sound
+              </div>
             </div>
           </div>
 
@@ -662,7 +728,7 @@ export default function HarrisContractingLiveDemo() {
             {!isMobile && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
                 <button style={styles.primaryButton} onClick={() => setStep("booking")} {...buttonHoverProps()}>
-                  Continue to Booking
+                  Schedule Project Review
                 </button>
                 <button
                   style={styles.secondaryButton}
@@ -672,7 +738,7 @@ export default function HarrisContractingLiveDemo() {
                   }}
                   {...buttonHoverProps()}
                 >
-                  Back to Estimate
+                  Edit Estimate
                 </button>
               </div>
             )}
@@ -711,7 +777,7 @@ function renderBooking() {
           <div style={styles.sectionLabel}>Project Review Summary</div>
           <div style={{ fontSize: isMobile ? 24 : 28, fontWeight: 700 }}>{project} · {finish}</div>
           <div style={{ fontSize: 14, color: colors.muted, marginTop: 8 }}>
-            Planning range: {formatCurrency(estimate.min)} – {formatCurrency(estimate.max)}
+            Planning range: {getEstimateDisplay("estimate")}
           </div>
         </div>
 
@@ -738,6 +804,9 @@ function renderBooking() {
         <p style={{ textAlign: "center", color: "#71717A", fontSize: 14, marginTop: 16, lineHeight: 1.7 }}>
           Only clients aligned with project scope and investment level are scheduled.
         </p>
+        <div style={{ fontSize: 13, color: "#A1A1AA", textAlign: "center", marginTop: 10 }}>
+          No obligation. This is simply to review your project via phone call and confirm details.
+        </div>
       </div>
     </div>
   );
@@ -805,7 +874,28 @@ const renderStep = () => {
             <div style={styles.eyebrow}>Harris Contracting</div>
             <div style={styles.brandTitle}>Franchise-Level Client Experience</div>
           </div>
-          {step === "home" && <button style={styles.primaryButton} onClick={() => { setEstimateSubstep(0); setStep("estimate"); }} {...buttonHoverProps()}>Start Estimate</button>}
+          {step === "home" && !isMobile && (
+            <button
+              type="button"
+              style={{
+                ...styles.primaryButton,
+                width: isMobile ? "100%" : "auto",
+                alignSelf: isMobile ? "stretch" : "auto",
+                position: "relative",
+                zIndex: 10,
+              }}
+              onClick={() => {
+                setProject(null);
+                setSize(null);
+                setFinish(null);
+                setEstimateSubstep(0);
+                setStep("estimate");
+              }}
+              {...buttonHoverProps()}
+            >
+              Start Estimate
+            </button>
+          )}
         </div>
 
         <div key={`${step}-${estimateSubstep}`} style={{ transition: "all 0.3s ease", transform: "translateY(0px)" }}>
@@ -861,10 +951,14 @@ const renderStep = () => {
                   transition: "transform 0.25s ease, opacity 0.25s ease, text-shadow 0.3s ease"
                 }}
               >
-                {formatCurrency(estimate.min)} – {formatCurrency(estimate.max)}
+                {getEstimateDisplay("estimate")}
               </div>
               <div style={{ fontSize: 12, color: colors.muted, marginTop: 6, textAlign: "center" }}>
-                {estimateSubstep === 0 ? project : estimateSubstep === 1 ? `${project} · ${size}` : `${project} · ${size} · ${finish}`}
+                {estimateSubstep === 0
+                  ? (project ? `${project} · Broad Range` : "Choose project type")
+                  : estimateSubstep === 1
+                    ? (project && size ? `${project} · ${size}` : (project ? `${project} · Broad Range` : "Choose project type"))
+                    : (project && size && finish ? `${project} · ${size} · ${finish}` : (project && size ? `${project} · ${size}` : "Choose finish level"))}
               </div>
             </div>
           )}
@@ -890,7 +984,9 @@ const renderStep = () => {
               style={{ ...styles.primaryButton, flex: 1 }}
               onClick={() => {
                 if (step === "estimate") {
-                  if (estimateSubstep < 2) setEstimateSubstep((estimateSubstep + 1) as EstimateSubstep);
+                  if (!hasSelectionForCurrentEstimateStep()) {
+                    promptForMissingSelection();
+                  } else if (estimateSubstep < 2) setEstimateSubstep((estimateSubstep + 1) as EstimateSubstep);
                   else {
                     setIsCalculating(true);
                     window.setTimeout(() => {
@@ -905,7 +1001,7 @@ const renderStep = () => {
                 }
               }}
             >
-              {step === "estimate" ? (estimateSubstep < 2 ? "Continue" : "Continue to Results") : step === "results" ? "Continue to Booking" : "Confirm Appointment"}
+              {step === "estimate" ? (estimateSubstep < 2 ? "Continue" : "Continue to Results") : step === "results" ? "Schedule Project Review" : "Confirm Appointment"}
             </button>
           </div>
         </div>
